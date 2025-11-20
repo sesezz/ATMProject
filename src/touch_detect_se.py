@@ -2,6 +2,8 @@
 import cv2
 import numpy as np
 import mediapipe as mp
+import itertools
+from collections import defaultdict
 
 ###################################################
 # 0. MediaPipe Hands 초기화
@@ -118,7 +120,7 @@ def map_key(wx, wy, x0, y0, btn_w, btn_h, gap_w, gap_h):
 # ---------------- MAIN PIPELINE ------------------
 ###################################################
 
-video = "data/processed_videos/static/검지2.MOV.mp4"
+video = "data/processed_videos/static/2317_정적3_민송2.MOV.mp4"
 cap = cv2.VideoCapture(video)
 
 ret, frame = cap.read()
@@ -146,6 +148,7 @@ x0, y0, btn_w, btn_h, gap_w, gap_h = compute_keypad_layout(pxX, pxY)
 ###################################################
 fingertips = []
 PIN = []
+pin_conf = []     # ★ 추가된 confidence 리스트 ★
 last_touch = -10
 MIN_PEAK = -0.02
 
@@ -167,7 +170,6 @@ while True:
         lm = result.multi_hand_landmarks[0].landmark[8]
         fx = int(lm.x * frame.shape[1])
         fy = int(lm.y * frame.shape[0])
-
         fingertips.append([fx, fy])
 
     # --- warp ---
@@ -180,9 +182,10 @@ while True:
         acc = np.diff(vel, axis=0) * fps
 
         ay = acc[-1,1]
+        print(f"[DEBUG] ay raw value: {ay}")
 
         # --- 터치 감지 ---
-        if ay < MIN_PEAK and (frame_idx - last_touch) > 2:
+        if ay < MIN_PEAK and (frame_idx - last_touch) > 7:
 
             last_touch = frame_idx
 
@@ -195,11 +198,22 @@ while True:
             key = map_key(wx, wy, x0, y0, btn_w, btn_h, gap_w, gap_h)
             if key is not None:
                 PIN.append(key)
-                print(f"Touch detected! Key = {key}")
+
+                # ★★ confidence 계산 (개선 버전) ★★
+                ay_abs = abs(ay)
+
+                # ay 스케일 정규화 (0~1)
+                norm = min(ay_abs / 15000.0, 1.0)
+
+                # 부드러운 confidence
+                conf = norm ** 2
+
+                pin_conf.append(conf)
+                print(f"Touch detected! Key = {key}, ay={ay:.1f}, conf={conf:.3f}")
 
             cv2.circle(warped, (wx, wy), 10, (0,255,0), 3)
 
-    # --- 키패드 그리기 ---
+    # --- 키패드 그리기 ---x
     idx = 0
     for r in range(4):
         for c in range(4):
@@ -219,3 +233,70 @@ cap.release()
 cv2.destroyAllWindows()
 
 print("Detected PIN:", PIN)
+print("Confidences :", pin_conf)
+
+# ---------------- MAIN PIPELINE 이후, PIN 변환 ----------------
+# 0~15 인덱스 기준 → 실제 키패드 숫자 매핑
+# 16개 키패드 인덱스: 0~15
+# 실제 ATM 키패드: 1~9, 0, A~D 등
+idx2num = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+
+# ---------------- MAIN PIPELINE 이후, PIN 변환 ----------------
+# 인덱스 → 실제 PIN 숫자 변환 규칙 적용
+# 규칙: 실제 PIN = (인덱스 + 1) % 10
+
+def index_to_real_digit(idx):
+    return (idx + 1) % 10
+
+# 변환 적용
+PIN_real = [ index_to_real_digit(i) for i in PIN ]
+
+print("Detected PIN 실제 숫자:", PIN_real)
+print("Confidences :", pin_conf)
+
+
+###################################################
+# ----- CONF 기반 PIN 후보 생성 (TOP10) -----
+###################################################
+
+def rank_pin_by_conf_combinations(PIN_real, confidences, pin_len=4, top_k=10):
+    n = len(PIN_real)
+    if n != len(confidences):
+        print("길이가 다름!")
+        return []
+
+    candidates = []
+
+    # 모든 조합 (시간 순서 유지)
+    for idxs in itertools.combinations(range(n), pin_len):
+        digits = [PIN_real[i] for i in idxs]
+        confs = [confidences[i] for i in idxs]
+
+        score = 1.0
+        for c in confs:
+            score *= c
+
+        pin_str = ''.join(str(d) for d in digits)
+
+        candidates.append({
+            "pin": pin_str,
+            "score": score,
+            "positions": idxs,
+            "confidences": confs
+        })
+
+    # 점수 순 정렬
+    candidates_sorted = sorted(candidates, key=lambda x: x["score"], reverse=True)
+
+    return candidates_sorted[:top_k]
+
+
+###################################################
+# ---------- PIN 후보 생성 실행 ----------
+###################################################
+
+candidates = rank_pin_by_conf_combinations(PIN_real, pin_conf, pin_len=4, top_k=10)
+
+print("\n===== Top PIN candidates =====")
+for i, item in enumerate(candidates, 1):
+    print(f"{i:02d}. PIN={item['pin']}  score={item['score']:.6e}")
