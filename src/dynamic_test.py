@@ -18,8 +18,8 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    min_detection_confidence=0.55,
-    min_tracking_confidence=0.55
+    min_detection_confidence=0.1,
+    min_tracking_confidence=0.5
 )
 
 
@@ -47,7 +47,7 @@ def click_event(event, x, y, flags, param):
         cv2.putText(frame_copy, f"P{len(src_pts)}", (x+10, y-10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
         cv2.imshow("Select", frame_copy)
-
+# 수동 좌표 
 def select_points(frame):
     global frame_copy
     frame_copy = frame.copy()
@@ -101,7 +101,7 @@ def map_key(wx, wy, x0, y0, btn_w, btn_h, gap_w, gap_h):
 
 
 # MAIN
-video = "data/processed_videos/dynamic/2317_민송_동적1.MOV.mp4"
+video = "data/processed_videos/dynamic/2317_민송_동적2.MOV.mp4"
 
 cap = cv2.VideoCapture(video)
 ret, frame = cap.read()
@@ -131,12 +131,21 @@ frame_idx = 0
 fps = cap.get(cv2.CAP_PROP_FPS)
 
 STABILIZE_FRAMES = int(fps * 0.20)
-VEL_THRESHOLD = 2.0
-ACC_THRESHOLD = -0.005
+VEL_THRESHOLD = 0.5
+ACC_THRESHOLD = -0.001
 COOLDOWN = 1
 
 cap = cv2.VideoCapture(video)
 print("\n=== 터치 탐지 중 ===")
+
+
+
+# === SPECIAL FIXED MAPPING ===
+FORCE_DIGIT = {
+    0: "1",   # index 0 → 무조건 숫자 1
+    14: "0",   # index 14 → 무조건 숫자 0
+    15: "0"
+}
 
 while True:
     ret, frame = cap.read()
@@ -158,6 +167,13 @@ while True:
         fingertips.append([fx, fy])
 
     warped = cv2.warpPerspective(frame, H_matrix, (W, H))
+
+    # 키패드 그리기
+    for r in range(4):
+        for c in range(4):
+            bx = x0 + c*(btn_w+gap_w)
+            by = y0 + r*(btn_h+gap_h)
+            cv2.rectangle(warped, (bx,by), (bx+btn_w,by+btn_h), (0,255,0),2)
 
     if len(fingertips) > 4:
         coords = np.array(fingertips)
@@ -183,10 +199,20 @@ while True:
             p = np.array([[[fx, fy]]], dtype=np.float32)
             wp = cv2.perspectiveTransform(p, H_matrix)[0][0]
             wx, wy = int(wp[0]), int(wp[1])
+        
 
             idx_key = map_key(wx, wy, x0, y0, btn_w, btn_h, gap_w, gap_h)
             if idx_key is not None:
                 conf = min(abs(ay)/8000.0, 1.0)**2
+                # ============================
+                #  🔥 강제 숫자 매핑 적용!
+                # ============================
+                if idx_key in FORCE_DIGIT:
+                    PIN_index.append(idx_key)
+                    pin_conf.append(conf)
+                    print(f"[TOUCH FIXED] index={idx_key} → digit={FORCE_DIGIT[idx_key]}, conf={conf:.4f}")
+                    continue
+
                 PIN_index.append(idx_key)
                 pin_conf.append(conf)
                 print(f"[TOUCH] index={idx_key}, conf={conf:.4f}, flip={cond_flip}")
@@ -254,7 +280,7 @@ print("총 생성:", len(layouts))
 def score_pin(pin, confs):
     return np.prod(confs)
 
-print("\n=== PIN Top-30 계산 중 ===")
+print("\n=== PIN Top-100 계산 중 ===")
 
 candidates = []
 combo_indices = list(range(len(PIN_index)))
@@ -269,6 +295,12 @@ for combo in all_combos:
         digits_real = []
 
         for idx in idx_seq:
+
+            # 🔥 강제 mapping 먼저 적용
+            if idx in FORCE_DIGIT:
+                digits_real.append(FORCE_DIGIT[idx])
+                continue
+
             key = layout[idx]
             if key in [MARK, 'R', 'B', 'C']:
                 valid = False
@@ -294,8 +326,8 @@ for c in candidates:
 candidates_unique = [
     {"pin": p, "score": s} for p, s in pin_best.items()
 ]
-candidates_unique = sorted(candidates_unique, key=lambda x: x["score"], reverse=True)[:30]
+candidates_unique = sorted(candidates_unique, key=lambda x: x["score"], reverse=True)[:100]
 
-print("\n===== Top-30 PIN Candidates =====")
+print("\n===== Top-100 PIN Candidates =====")
 for i,c in enumerate(candidates_unique,1):
     print(f"{i:02d}. {c['pin']} (score={c['score']:.6e})")
