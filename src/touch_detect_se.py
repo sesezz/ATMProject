@@ -12,7 +12,7 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    min_detection_confidence=0.6,
+    min_detection_confidence=0.5,
     min_tracking_confidence=0.6
 )
 
@@ -120,7 +120,7 @@ def map_key(wx, wy, x0, y0, btn_w, btn_h, gap_w, gap_h):
 # ---------------- MAIN PIPELINE ------------------
 ###################################################
 
-video = "data/processed_videos/static/2317_정적3_민송2.MOV.mp4"
+video = "data/processed_videos/static/2317_정적3_세은1.MOV.mp4"
 cap = cv2.VideoCapture(video)
 
 ret, frame = cap.read()
