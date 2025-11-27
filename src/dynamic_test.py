@@ -18,7 +18,7 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    min_detection_confidence=0.1,
+    min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
 
@@ -101,7 +101,7 @@ def map_key(wx, wy, x0, y0, btn_w, btn_h, gap_w, gap_h):
 
 
 # MAIN
-video = "data/processed_videos/dynamic/2317_민송_동적2.MOV.mp4"
+video = "data/processed_videos/dynamic/2317_세은_동적1.MOV.mp4"
 
 cap = cv2.VideoCapture(video)
 ret, frame = cap.read()
