@@ -256,10 +256,10 @@ print("Confidences :", pin_conf)
 
 
 ###################################################
-# ----- CONF 기반 PIN 후보 생성 (TOP10) -----
+# ----- CONF 기반 PIN 후보 생성 (TOP50) -----
 ###################################################
 
-def rank_pin_by_conf_combinations(PIN_real, confidences, pin_len=4, top_k=10):
+def rank_pin_by_conf_combinations(PIN_real, confidences, pin_len=4, top_k=50):
     n = len(PIN_real)
     if n != len(confidences):
         print("길이가 다름!")
@@ -295,8 +295,25 @@ def rank_pin_by_conf_combinations(PIN_real, confidences, pin_len=4, top_k=10):
 # ---------- PIN 후보 생성 실행 ----------
 ###################################################
 
-candidates = rank_pin_by_conf_combinations(PIN_real, pin_conf, pin_len=4, top_k=10)
+# 후보 생성
+candidates = rank_pin_by_conf_combinations(PIN_real, pin_conf, pin_len=4, top_k=200)
 
-print("\n===== Top PIN candidates =====")
-for i, item in enumerate(candidates, 1):
+# 🔥 PIN 문자열을 key로 하여 최고 점수만 남기기
+unique_best = {}
+
+for item in candidates:
+    pin = item["pin"]
+    score = item["score"]
+
+    # 딕셔너리에 없거나 → score 높은 게 나오면 교체
+    if pin not in unique_best or score > unique_best[pin]["score"]:
+        unique_best[pin] = item
+
+# dict → list 변환 후, score 기준 정렬
+final_candidates = sorted(unique_best.values(), key=lambda x: x["score"], reverse=True)
+
+# Top-K만 출력
+TOP_K = 50
+print("\n===== Top PIN candidates (Unique) =====")
+for i, item in enumerate(final_candidates[:TOP_K], 1):
     print(f"{i:02d}. PIN={item['pin']}  score={item['score']:.6e}")
